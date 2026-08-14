@@ -29,6 +29,7 @@ download:
 start:
     podman run --detach \
         --name {{ container_name }} \
+        --security-opt label=disable \
         --device nvidia.com/gpu=0 \
         --publish 127.0.0.1:{{ port }}:8000 \
         --volume "{{ justfile_directory() }}/models:/models:ro,Z" \
@@ -42,6 +43,7 @@ start:
         --cache-type-v q8_0 \
         --jinja \
         --reasoning-format deepseek \
+        --reasoning-preserve \
         --host 0.0.0.0 \
         --port 8000
 
@@ -60,3 +62,6 @@ health:
 
 smoke:
     bash scripts/smoke.sh {{ port }}
+
+long-context:
+    bash scripts/long-context.sh {{ port }}
