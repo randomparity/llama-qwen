@@ -112,6 +112,43 @@ Tool selection with described tools showed no position sensitivity at this list
 length, so the widely-repeated advice to order tools defensively is not supported
 on this setup. Untested here: undescribed tools, and lists longer than eight.
 
+## MTP speculative decoding (2026-08-24)
+
+The GGUF carries the nextn head (`blk.64.nextn.*`), so `--spec-type draft-mtp`
+needs no separate draft model. The server log confirms it loads:
+`common_speculative_init_result: creating MTP draft context against the target
+model`.
+
+Decode throughput, `reasoning_effort: low`, `temperature: 0`, 1,200-token cap:
+
+| `--spec-draft-n-max` | code t/s | code accept | prose t/s | prose accept |
+| --- | --- | --- | --- | --- |
+| off (baseline) | 27.5 | — | 27.3 | — |
+| **3 (default)** | **62.5** | **79%** | **53.6** | **64%** |
+| 5 | 64.7 | 69% | 48.5 | 47% |
+| 7 | 59.1 | 59% | 40.4 | 36% |
+
+Enabled at the default `n-max`, which the sweep shows is the right value: 5 buys
+3.5% on code and gives up 9.5% on prose, and 7 is worse on both. Acceptance falls
+monotonically as the draft lengthens. Widely-repeated advice to raise this to 5 or
+7 does not hold here.
+
+Prose does not regress. Both workload shapes roughly double — 2.27x on code and
+1.96x on prose — so the reported risk of MTP going net-slower on prose did not
+materialise on this setup.
+
+**Lossless at `temperature: 0`.** The same prompt produced byte-identical output
+with and without MTP (SHA `b05fbf4d16112b17`, 670 characters), which is the
+expected property of speculative decoding and worth having confirmed rather than
+assumed.
+
+Cost: **+2,150 MiB** (34,735 MiB idle without, 36,885 MiB with, same measurement
+method, both including desktop usage). The full 262,144-token context still fits.
+
+At depth, `just long-context` passes with MTP enabled — 250,035 prompt tokens,
+correct retrieval, 490.3 t/s prefill against 508.5 t/s recorded for the earlier
+non-MTP run.
+
 ## Devstral Small 2 24B FP8 baseline
 
 The unchanged service was restarted and tested with the same coding command,
