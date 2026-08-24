@@ -58,6 +58,37 @@ asserts the default reaches the template. **`medium` is provisional** — it is 
 yet backed by a quality measurement on this host. The three-arm sweep will
 either confirm it or replace it.
 
+## Reasoning preservation and the stock chat template
+
+Template extracted authoritatively from the running server's `/props` endpoint
+(9,993 characters), not by scanning the GGUF.
+
+- `supports_preserve_reasoning` does **not** appear in the template. llama.cpp's
+  `--reasoning-preserve` keys on that capability, so the flag was inert and has
+  been removed from `just start`.
+- The template preserves reasoning through its own variable instead:
+  `preserve_thinking is undefined or preserve_thinking is true` guards the branch
+  that re-emits `<think>` blocks for prior turns. Undefined means **on**, so
+  preservation was already the default.
+- Verified behaviourally: a four-message history with sentinel traces renders both
+  sentinels by default, and neither under
+  `chat_template_kwargs: {"preserve_thinking": false}`. Removing
+  `--reasoning-preserve` and restarting changed nothing, confirming it was a no-op.
+- `just smoke` now asserts multi-turn preservation directly.
+
+The template also confirms two behaviours reported elsewhere:
+`reasoning_effort|default('xhigh')` sets the shipped default, and an effort
+outside `low`/`medium`/`xhigh` raises rather than falling back (`high` is aliased
+to `xhigh`).
+
+### Decision: do not adopt a third-party chat template
+
+The reasons to switch do not survive measurement on this setup. Preserve-reasoning
+already works, and thoughts are already emitted chronologically, so the KV
+prefix-caching benefit is already present. That leaves no benefit worth taking on
+an unpinned external artifact that replaces the model's own prompt format and
+would invalidate any benchmark measured against the stock template.
+
 ## Devstral Small 2 24B FP8 baseline
 
 The unchanged service was restarted and tested with the same coding command,
