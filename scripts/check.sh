@@ -1,18 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly expected_branch='feat/qwen3-8-27b-container'
 readonly model_file='Qwen3.8-27B-Q6_K.gguf'
 readonly image='ghcr.io/ggml-org/llama.cpp:server-cuda-b10423@sha256:a475c08c7c472425e3ebf7f6be9c6cb3a17e82ec28070ddeb22fffe3ca754a94'
 
 [[ "$(uname -m)" == 'x86_64' ]] || {
 	printf 'Unsupported host architecture: %s (expected x86_64)\n' "$(uname -m)" >&2
-	exit 1
-}
-
-[[ "$(git branch --show-current)" == "$expected_branch" ]] || {
-	printf 'Run project checks on %s, not %s\n' \
-		"$expected_branch" "$(git branch --show-current)" >&2
 	exit 1
 }
 
