@@ -89,6 +89,29 @@ prefix-caching benefit is already present. That leaves no benefit worth taking o
 an unpinned external artifact that replaces the model's own prompt format and
 would invalidate any benchmark measured against the stock template.
 
+## Tool-loop failure modes probed (2026-08-24)
+
+Four reported template/tool defects were probed directly against the pinned image
+with the stock template. Three did not reproduce and are now covered by
+`just smoke` so they are not re-investigated:
+
+| Case | Result |
+| --- | --- |
+| Multi-turn round trip, tool result fed back and read | works |
+| Assistant history with `arguments` as a JSON string | works, no crash |
+| Required tool buried mid-list among 8 described tools | selected correctly first, middle, and last |
+| Mid-dialogue `system` message | **HTTP 500** — see #10 |
+
+The fourth is a real defect: the template raises
+`System message must be at the beginning.` at line 110 and the server returns 500
+with no completion. That is worse than the report that prompted the check, which
+described silent dropping. It is tracked in #10 rather than encoded here — a test
+asserting a defect is not coverage.
+
+Tool selection with described tools showed no position sensitivity at this list
+length, so the widely-repeated advice to order tools defensively is not supported
+on this setup. Untested here: undescribed tools, and lists longer than eight.
+
 ## Devstral Small 2 24B FP8 baseline
 
 The unchanged service was restarted and tested with the same coding command,
