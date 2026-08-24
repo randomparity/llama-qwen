@@ -44,7 +44,6 @@ start:
         --jinja \
         --chat-template-kwargs '{"reasoning_effort":"medium"}' \
         --reasoning-format deepseek \
-        --reasoning-preserve \
         --host 0.0.0.0 \
         --port 8000
 

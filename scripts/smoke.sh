@@ -106,3 +106,28 @@ explicit_prompt="$(render_prompt "$(
 }
 
 printf 'Reasoning-effort default (%s) verified.\n' "$configured_effort"
+
+# Reasoning traces must survive into later turns. The stock template preserves
+# them by default through its own `preserve_thinking` variable — llama.cpp's
+# --reasoning-preserve does not apply, because this template does not advertise
+# `supports_preserve_reasoning`. Chronological preservation is what keeps the KV
+# prefix cache reusable across an agent loop at this context size, so assert it
+# rather than trusting a template default we do not control.
+preserved="$(render_prompt '{
+  "messages": [
+    {"role": "user", "content": "Q1"},
+    {"role": "assistant", "content": "A1", "reasoning_content": "TRACE_ALPHA"},
+    {"role": "user", "content": "Q2"},
+    {"role": "assistant", "content": "A2", "reasoning_content": "TRACE_BETA"},
+    {"role": "user", "content": "Q3"}
+  ]
+}')"
+
+for trace in TRACE_ALPHA TRACE_BETA; do
+	[[ "$preserved" == *"$trace"* ]] || {
+		printf 'Reasoning trace %s was dropped from multi-turn history.\n' "$trace" >&2
+		exit 1
+	}
+done
+
+printf 'Multi-turn reasoning preservation verified.\n'
