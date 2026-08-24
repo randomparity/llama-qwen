@@ -113,7 +113,7 @@ The template also confirms two behaviours reported elsewhere:
 outside `low`/`medium`/`xhigh` raises rather than falling back (`high` is aliased
 to `xhigh`).
 
-### Decision: do not adopt a third-party chat template
+### Decision: no third-party chat template (two candidates evaluated)
 
 The reasons to switch do not survive measurement on this setup. Preserve-reasoning
 already works, and thoughts are already emitted chronologically, so the KV
@@ -148,6 +148,46 @@ and `just template-check` re-derives it from the running model and fails if the
 vendored file has drifted. That is what makes forking the prompt format
 maintainable: a model update that moves the patched region fails loudly instead of
 shipping a stale fork.
+
+### Evaluated and viable but not adopted: froggeric v22.3
+
+`froggeric/Qwen-Fixed-Chat-Templates` (Hugging Face, Apache-2.0, updated
+2026-08-21, tags `qwen3.8` / `llama.cpp` / `tool-calling`) is a genuine candidate,
+unlike the one above. Measured 2026-08-24 on the pinned image:
+
+- Passes **all six** `just smoke` stages.
+- Format-faithful: its rendered prompts for `low` and `xhigh` hash to `d7cc8711e3`
+  and `dff9882a34` — byte-identical to both the stock template and our patch.
+
+Where it differs from the vendored patch:
+
+| Behaviour | Vendored patch | froggeric v22.3 |
+| --- | --- | --- |
+| Mid-dialogue system, effort ladder, preservation, tool format | pass | pass |
+| Alias `high` | 200 (stock aliases it already) | 200 |
+| Alias `minimal`, `ultracode` | HTTP 500 | 200 |
+| Inline think-tag steering (see below) | not steered | steers (`d7cc8711e3`) |
+| Unknown effort value | **HTTP 500 — fails fast** | **200 — silent fallback** |
+
+**Not adopted, for now.** Its two real additions — client effort aliases and inline
+`<|think_*|>` steering — are features nothing in this repo currently sends. Taking
+them costs a 26 KB external artifact to track, the loss of fail-fast validation on
+a mistyped effort, and `just template-check`, which only works because our template
+is derived from the model's own. Its shipped default is also `medium`, which the
+sweep above shows is strictly dominated by `low`.
+
+**Adopt it when** a real client sends `minimal`/`ultracode`, or per-turn steering
+from inside message text becomes useful. It already passes the full suite, so the
+swap is clean; pin it by revision and re-run `just smoke` at that point.
+
+**Two of its advertised fixes do not apply here.** Its README states the official
+template "throws a fatal exception if `enable_thinking=false`" and "crashes on
+serialized JSON strings from standard OpenAI API clients." Neither reproduces
+against this GGUF: `enable_thinking:false` returns 200, and JSON-string tool
+arguments render correctly as `<function=get_weather><parameter=city>`. It is
+describing a different revision of the official template than the one embedded in
+these weights — which is the same reason several widely-repeated community claims
+failed to reproduce during this work.
 
 ## Tool-loop failure modes probed (2026-08-24)
 
