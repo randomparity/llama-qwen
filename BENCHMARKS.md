@@ -21,6 +21,43 @@ Coding benchmark (`bench/eval_coding.py`, temperature 0):
 - Average latency: 17.9 seconds/problem
 - Default thinking was enabled.
 
+## Reasoning-effort plumbing (llama.cpp b10423)
+
+Measured 2026-08-24 by comparing rendered prompts from `/apply-template`.
+
+| Request path | Prompt digest | Steers? |
+| --- | --- | --- |
+| no effort field | `dff9882a` | n/a — shipped default (xhigh) |
+| `reasoning_effort: "low"` | `dff9882a` | no — silently ignored |
+| `reasoning_effort: "medium"` | `dff9882a` | no — silently ignored |
+| `reasoning_effort: "xhigh"` | `dff9882a` | indistinguishable from default |
+| `reasoning_effort: "none"` | `3ba0073f` | yes — maps to thinking-off |
+| `chat_template_kwargs.reasoning_effort: "low"` | `d7cc8711` | yes |
+| `chat_template_kwargs.reasoning_effort: "medium"` | `badbf419` | yes |
+| `chat_template_kwargs.enable_thinking: false` | `3ba0073f` | yes |
+
+This build has no `--reasoning-effort` flag. The OpenAI-standard top-level
+`reasoning_effort` field steers only `"none"`; the low/medium/xhigh ladder is
+accepted and dropped. Generation confirms it: the same prompt at `"low"`,
+`"medium"`, and `"xhigh"` returned byte-identical output (70 completion tokens,
+220 reasoning characters) at `temperature: 0`.
+
+Consequences for earlier results on this page:
+
+- The coding benchmark below sent no effort field at all, so it ran at `xhigh`.
+- The long-context probe uses `"none"`, which does work — but that means the
+  250,035-token retrieval pass was measured with thinking disabled and is not a
+  quality result.
+- `scripts/smoke.sh` previously sent `reasoning_effort: "low"` for its reasoning
+  and tool-call cases, so those ran at `xhigh` despite the request. Both now use
+  `chat_template_kwargs`.
+
+The server default is now set explicitly via
+`--chat-template-kwargs '{"reasoning_effort":"medium"}'`, and `just smoke`
+asserts the default reaches the template. **`medium` is provisional** — it is not
+yet backed by a quality measurement on this host. The three-arm sweep will
+either confirm it or replace it.
+
 ## Devstral Small 2 24B FP8 baseline
 
 The unchanged service was restarted and tested with the same coding command,

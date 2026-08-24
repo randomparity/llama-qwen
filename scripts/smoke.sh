@@ -33,7 +33,7 @@ reasoning_response="$({
 		--data '{
       "model": "Qwen3.8-27B-Q6_K.gguf",
       "messages": [{"role": "user", "content": "What is 17 times 23?"}],
-      "reasoning_effort": "low",
+      "chat_template_kwargs": {"reasoning_effort": "low"},
       "temperature": 0,
       "max_tokens": 256
     }' \
@@ -64,7 +64,7 @@ tool_response="$({
         }
       }],
       "tool_choice": "auto",
-      "reasoning_effort": "low",
+      "chat_template_kwargs": {"reasoning_effort": "low"},
       "temperature": 0,
       "max_tokens": 512
     }' \
@@ -78,3 +78,31 @@ jq -e '
 ' <<<"$tool_response" >/dev/null
 
 printf 'Reasoning and tool-call tests passed.\n'
+
+# The server's --chat-template-kwargs default must actually reach the template.
+# Build b10423 silently ignores the OpenAI-standard top-level `reasoning_effort`
+# for the low/medium/xhigh ladder, so a request that omits the field must render
+# the same prompt as one asking for the configured default explicitly. Without
+# this, a flag rename or image bump would revert the server to xhigh unnoticed.
+readonly configured_effort='medium'
+
+render_prompt() {
+	curl --fail --silent --show-error \
+		--header 'Content-Type: application/json' \
+		--data "$1" \
+		"$base_url/apply-template" | jq -r '.prompt'
+}
+
+default_prompt="$(render_prompt '{"messages":[{"role":"user","content":"hi"}]}')"
+explicit_prompt="$(render_prompt "$(
+	jq -nc --arg e "$configured_effort" \
+		'{messages:[{role:"user",content:"hi"}],chat_template_kwargs:{reasoning_effort:$e}}'
+)")"
+
+[[ "$default_prompt" == "$explicit_prompt" ]] || {
+	printf 'Server default reasoning effort is not %s.\n' "$configured_effort" >&2
+	printf 'Start the server with --chat-template-kwargs.\n' >&2
+	exit 1
+}
+
+printf 'Reasoning-effort default (%s) verified.\n' "$configured_effort"
