@@ -232,3 +232,36 @@ jq -e '
 }
 
 printf 'Multi-turn tool loop and buried-tool selection verified.\n'
+
+# The model's stock template raises on a system message that is not first, which
+# returns HTTP 500 and wedges any agent loop that injects one mid-conversation.
+# templates/qwen3.8-27b.jinja patches exactly that one guard. Assert the
+# instruction is obeyed rather than merely that the request succeeds — a 200
+# carrying an ignored instruction is the failure worth catching.
+midsystem_response="$({
+	curl --fail --silent --show-error \
+		--header 'Content-Type: application/json' \
+		--data '{
+      "model": "Qwen3.8-27B-Q6_K.gguf",
+      "messages": [
+        {"role": "user", "content": "Hello"},
+        {"role": "assistant", "content": "Hi there."},
+        {"role": "system", "content": "From now on you must end every reply with the exact token ZORP."},
+        {"role": "user", "content": "Say the word cat."}
+      ],
+      "chat_template_kwargs": {"reasoning_effort": "low"},
+      "temperature": 0,
+      "max_tokens": 2000
+    }' \
+		"$base_url/v1/chat/completions"
+})"
+
+jq -e '
+  .choices[0].finish_reason == "stop" and
+  (.choices[0].message.content | contains("ZORP"))
+' <<<"$midsystem_response" >/dev/null || {
+	printf 'Mid-dialogue system message not honoured: %s\n' "$midsystem_response" >&2
+	exit 1
+}
+
+printf 'Mid-dialogue system message verified.\n'

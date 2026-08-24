@@ -121,6 +121,34 @@ prefix-caching benefit is already present. That leaves no benefit worth taking o
 an unpinned external artifact that replaces the model's own prompt format and
 would invalidate any benchmark measured against the stock template.
 
+That decision was tested against a concrete candidate and held. The templates at
+`HarryMayne/qwen_3_chat_templates` were run against this model:
+
+| Behaviour | Stock | `all_assistant.jinja` | Vendored patch |
+| --- | --- | --- | --- |
+| Mid-dialogue system message | HTTP 500 | 200 | 200 |
+| Effort ladder steers | yes | **no** | yes |
+| Reasoning preserved across turns | yes | **no** | yes |
+| Tool-call format | native `<function=` | **legacy JSON** | native `<function=` |
+
+They are Qwen 3 **8B** templates from 2025, written for SFT/RL token masking
+(`{% generation %}` markers), not for serving this model. They fix the one thing
+and break three.
+
+### What is used instead: a one-line patch of the model's own template
+
+`templates/qwen3.8-27b.jinja` is the model's embedded template with exactly one
+substitution — the `raise_exception('System message must be at the beginning.')`
+guard replaced by rendering that message as its own system turn. Verified: the
+rendered prompts for `reasoning_effort` low and xhigh hash identically to the
+stock template's, so nothing outside the patched line moved.
+
+The patch lives in `scripts/patch_template.py` as code, not as a hand-edited copy,
+and `just template-check` re-derives it from the running model and fails if the
+vendored file has drifted. That is what makes forking the prompt format
+maintainable: a model update that moves the patched region fails loudly instead of
+shipping a stale fork.
+
 ## Tool-loop failure modes probed (2026-08-24)
 
 Four reported template/tool defects were probed directly against the pinned image
