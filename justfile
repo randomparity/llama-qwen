@@ -33,6 +33,7 @@ start:
         --device nvidia.com/gpu=0 \
         --publish 127.0.0.1:{{ port }}:8000 \
         --volume "{{ justfile_directory() }}/models:/models:ro,Z" \
+        --volume "{{ justfile_directory() }}/templates:/templates:ro,Z" \
         {{ image }} \
         --model /models/{{ model_file }} \
         --ctx-size {{ context_size }} \
@@ -43,6 +44,7 @@ start:
         --cache-type-v q8_0 \
         --spec-type draft-mtp \
         --jinja \
+        --chat-template-file /templates/qwen3.8-27b.jinja \
         --chat-template-kwargs '{"reasoning_effort":"xhigh"}' \
         --reasoning-format deepseek \
         --host 0.0.0.0 \
@@ -63,6 +65,28 @@ health:
 
 smoke:
     bash scripts/smoke.sh {{ port }}
+
+# Verify the vendored template still matches the model's own plus our one patch.
+# Runs against a server started WITHOUT the override, so it reads the stock
+# template out of the GGUF.
+template-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    stock="$(mktemp)"
+    trap 'rm -f "$stock"; podman rm --force llama-qwen-tplcheck >/dev/null 2>&1 || true' EXIT
+    podman run --detach --name llama-qwen-tplcheck \
+        --security-opt label=disable --device nvidia.com/gpu=0 \
+        --publish 127.0.0.1:8099:8000 \
+        --volume "{{ justfile_directory() }}/models:/models:ro,Z" \
+        {{ image }} \
+        --model /models/{{ model_file }} --ctx-size 4096 --n-gpu-layers 999 \
+        --jinja --host 0.0.0.0 --port 8000 >/dev/null
+    for _ in $(seq 1 60); do
+        curl --fail --silent http://127.0.0.1:8099/health >/dev/null 2>&1 && break
+        sleep 5
+    done
+    curl --fail --silent http://127.0.0.1:8099/props | jq -r '.chat_template' > "$stock"
+    uv run scripts/patch_template.py --in "$stock" --check templates/qwen3.8-27b.jinja
 
 long-context:
     bash scripts/long-context.sh {{ port }}
