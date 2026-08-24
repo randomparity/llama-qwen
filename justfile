@@ -42,6 +42,7 @@ start:
         --cache-type-k q8_0 \
         --cache-type-v q8_0 \
         --jinja \
+        --chat-template-kwargs '{"reasoning_effort":"medium"}' \
         --reasoning-format deepseek \
         --reasoning-preserve \
         --host 0.0.0.0 \
