@@ -41,6 +41,7 @@ start:
         --flash-attn on \
         --cache-type-k q8_0 \
         --cache-type-v q8_0 \
+        --spec-type draft-mtp \
         --jinja \
         --chat-template-kwargs '{"reasoning_effort":"medium"}' \
         --reasoning-format deepseek \
