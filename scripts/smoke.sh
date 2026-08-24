@@ -84,7 +84,7 @@ printf 'Reasoning and tool-call tests passed.\n'
 # for the low/medium/xhigh ladder, so a request that omits the field must render
 # the same prompt as one asking for the configured default explicitly. Without
 # this, a flag rename or image bump would revert the server to xhigh unnoticed.
-readonly configured_effort='medium'
+readonly configured_effort='xhigh'
 
 render_prompt() {
 	curl --fail --silent --show-error \

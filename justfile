@@ -43,7 +43,7 @@ start:
         --cache-type-v q8_0 \
         --spec-type draft-mtp \
         --jinja \
-        --chat-template-kwargs '{"reasoning_effort":"medium"}' \
+        --chat-template-kwargs '{"reasoning_effort":"xhigh"}' \
         --reasoning-format deepseek \
         --host 0.0.0.0 \
         --port 8000
@@ -66,3 +66,19 @@ smoke:
 
 long-context:
     bash scripts/long-context.sh {{ port }}
+
+# Coding eval at one reasoning effort. Omit effort for models without a ladder.
+eval-coding effort="":
+    uv run bench/eval_coding.py \
+        --base-url http://127.0.0.1:{{ port }} \
+        --temperature 0 \
+        {{ if effort == "" { "" } else { "--reasoning-effort " + effort } }}
+
+# All three efforts, one after another. Serial by necessity: one GPU.
+eval-sweep:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for effort in low medium xhigh; do
+        printf '\n===== reasoning_effort=%s =====\n' "$effort"
+        just eval-coding "$effort" || true
+    done

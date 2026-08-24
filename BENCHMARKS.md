@@ -19,7 +19,39 @@ Coding benchmark (`bench/eval_coding.py`, temperature 0):
 - Result: 11/15 (73%)
 - Total time: 269.2 seconds
 - Average latency: 17.9 seconds/problem
-- Default thinking was enabled.
+- Default thinking was enabled — which means `xhigh` (see the sweep below).
+
+### Reasoning-effort sweep (2026-08-24)
+
+Run with the vendored harness at `--max-tokens 32000`, effort sent through
+`chat_template_kwargs` because the top-level field is inert on this build.
+
+| Effort | Score | Total time | Avg latency | Tokens/problem |
+| --- | --- | --- | --- | --- |
+| low | 8/15 (53%) | 70.7 s | 4.7 s | 283 |
+| medium | 8/15 (53%) | 92.6 s | 6.2 s | 364 |
+| xhigh | 11/15 (73%) | 269.6 s | 18.0 s | 895 |
+
+**No arm truncated a single problem.** An earlier hypothesis on this page's
+`xhigh` figure — that the original 1024-token cap had cut completions off and the
+run was measuring the cap — is refuted. Only `make_palindrome` runs long (7,336
+tokens); the other fourteen fit inside the old cap. The `xhigh` arm also
+reproduces the original result closely, 11/15 at 18.0 s against 11/15 at 17.9 s,
+so the figures recorded above stand.
+
+Two results run against the community reporting that prompted this sweep:
+
+- **`xhigh` earns its cost on this eval.** It is +20 points over both lower
+  efforts for 3.2x the tokens of `low`, not the reported 7-11x multiplier, and
+  the lower efforts do not converge to within a few points. The claim that `low`
+  is the rational preset does not hold here.
+- **`medium` is strictly dominated.** Identical score to `low`, 31% more wall
+  time, 29% more tokens. No workload on this eval prefers it.
+
+Limits worth keeping in view: 15 problems is a small sample and 8 vs 11 is a
+three-problem gap, so treat the ordering as indicative rather than established.
+The problems are short HumanEval-style completions, which is the shape reported to
+flatter lower efforts least; a long-horizon agentic task could order differently.
 
 ## Reasoning-effort plumbing (llama.cpp b10423)
 
@@ -160,8 +192,33 @@ host, GPU, test set, and temperature.
 
 ## Decision
 
-Keep Devstral as the active default for now. Qwen provides the required 256K
-context and passes the agent API checks, but this initial benchmark does not
-support a quality or latency improvement claim. Before cutting over, evaluate
-Qwen with a representative agentic workload and compare thinking-disabled and
-thinking-enabled policies separately.
+**Do not cut over to Qwen for this workload.** The sweep strengthens rather than
+overturns the original call: Qwen at its best effort scores 11/15 (73%) at 18.0
+s/problem, against Devstral's recorded 14/15 (93%) at 3.7 s/problem. Qwen loses on
+both axes at every effort, and the gap is far larger than the caveats below could
+plausibly close.
+
+The server default is now `xhigh`, since the sweep shows it is the only effort
+that reaches Qwen's ceiling and that `medium` is strictly dominated by `low`. Use
+`low` where latency matters more than correctness; there is no reason to select
+`medium`.
+
+Two caveats on the comparison, both recorded rather than resolved:
+
+- **The Devstral baseline was not re-measured under the current harness.** The
+  numbers above come from the original run at `--max-tokens 1024`. Devstral is not
+  a reasoning model and its completions are short, so the cap almost certainly did
+  not bind — but that is reasoning, not measurement. Re-running was attempted and
+  blocked; see #13.
+- **The Devstral service does not currently start** (#13). The recorded decision
+  to keep it as the active default, and `README.md`'s description of it as the
+  rollback path, both describe something unavailable as of 2026-08-24. That is a
+  more urgent problem than which model scores better.
+
+What this sweep does settle is narrower than the original question and worth
+stating plainly: it settles how Qwen should be *configured*, not whether Qwen
+should be *adopted*. Fifteen short HumanEval-style completions do not exercise the
+long-context agentic behaviour that motivated running a 256K-context model in the
+first place, and that workload is where Qwen's case would have to be made. The
+representative agentic evaluation called for in the original decision is still
+outstanding.
