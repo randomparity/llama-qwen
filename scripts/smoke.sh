@@ -131,3 +131,104 @@ for trace in TRACE_ALPHA TRACE_BETA; do
 done
 
 printf 'Multi-turn reasoning preservation verified.\n'
+
+# A single-turn tool call proves almost nothing about an agent loop. This drives a
+# full round trip — call, tool result fed back, follow-up turn that must read that
+# result — and sends the assistant's prior `arguments` as a JSON string, which is
+# the standard OpenAI wire format and a reported crash trigger on this template.
+roundtrip_response="$({
+	curl --fail --silent --show-error \
+		--header 'Content-Type: application/json' \
+		--data '{
+      "model": "Qwen3.8-27B-Q6_K.gguf",
+      "messages": [
+        {"role": "user", "content": "Weather in Portland?"},
+        {"role": "assistant", "content": null, "tool_calls": [{
+          "id": "call_1", "type": "function",
+          "function": {"name": "get_weather", "arguments": "{\"city\":\"Portland\"}"}
+        }]},
+        {"role": "tool", "tool_call_id": "call_1", "content": "52F and raining"},
+        {"role": "user", "content": "What temperature did the tool report? Reply with just the number."}
+      ],
+      "tools": [{
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "description": "Get weather for a city",
+          "parameters": {
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"]
+          }
+        }
+      }],
+      "tool_choice": "auto",
+      "chat_template_kwargs": {"reasoning_effort": "low"},
+      "temperature": 0,
+      "max_tokens": 2000
+    }' \
+		"$base_url/v1/chat/completions"
+})"
+
+jq -e '
+  .choices[0].finish_reason == "stop" and
+  (.choices[0].message.content | contains("52"))
+' <<<"$roundtrip_response" >/dev/null || {
+	printf 'Multi-turn tool round trip failed: %s\n' "$roundtrip_response" >&2
+	exit 1
+}
+
+# Tool-call reliability is reported to collapse with list length and position
+# rather than model capability, so exercise the hard shape: the required tool
+# buried mid-list among eight described siblings.
+buried_request="$(jq -nc '
+  def tool($n): {
+    type: "function",
+    function: {
+      name: $n,
+      description: ("Tool that performs the " + ($n | gsub("_"; " ")) + " operation."),
+      parameters: {type: "object", properties: {arg: {type: "string"}}, required: ["arg"]}
+    }
+  };
+  {
+    model: "Qwen3.8-27B-Q6_K.gguf",
+    messages: [{role: "user", content: "Use the weather tool for Portland, Oregon."}],
+    tools: (
+      [tool("list_files"), tool("read_file"), tool("search_web")] +
+      [{
+        type: "function",
+        function: {
+          name: "get_weather",
+          description: "Get the current weather for a city.",
+          parameters: {
+            type: "object",
+            properties: {city: {type: "string"}},
+            required: ["city"]
+          }
+        }
+      }] +
+      [tool("send_email"), tool("create_ticket"), tool("run_query"), tool("render_chart")]
+    ),
+    tool_choice: "auto",
+    chat_template_kwargs: {reasoning_effort: "low"},
+    temperature: 0,
+    max_tokens: 2000
+  }
+')"
+
+buried_response="$({
+	curl --fail --silent --show-error \
+		--header 'Content-Type: application/json' \
+		--data "$buried_request" \
+		"$base_url/v1/chat/completions"
+})"
+
+jq -e '
+  .choices[0].finish_reason == "tool_calls" and
+  .choices[0].message.tool_calls[0].function.name == "get_weather"
+' <<<"$buried_response" >/dev/null || {
+	printf 'Buried-tool selection failed: %s\n' "$buried_response" >&2
+	exit 1
+}
+
+printf 'Multi-turn tool loop and buried-tool selection verified.\n'
