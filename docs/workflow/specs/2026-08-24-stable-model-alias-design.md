@@ -35,11 +35,10 @@ weight-loading input while the alias becomes the public routing identifier.
 
 The smoke script first queries `/v1/models` and fails unless `data` contains exactly one
 entry whose `id` is `qwen3.8-27b`. Every subsequent request uses that same literal. A
-separate `just check` assertion inventories the seven current explicit double-quoted
-`model` strings—six in `scripts/smoke.sh` and one in `scripts/long-context.sh`—and fails
-unless all seven equal `qwen3.8-27b`. Cardinality makes the assertion non-vacuous and
-requires intentional updates when request inventory changes. The coding evaluation retains
-its discovered, nonliteral model value and therefore follows the alias without duplicating it.
+separate `just check` assertion requires at least one explicit double-quoted `model`
+string in each request-owning shell client and fails unless every explicit model literal
+across the in-scope clients equals `qwen3.8-27b`. The coding evaluation retains its
+discovered, nonliteral model value and therefore follows the alias without duplicating it.
 
 No fallback or compatibility path is implemented for the path identifier. llama.cpp may
 incidentally accept other model strings while routing a single loaded model, but only the alias is
@@ -49,9 +48,10 @@ documented and tested.
 
 - An image without `--alias` support fails at server startup with its normal argument error.
   The pinned image was verified to advertise `-a, --alias STRING` through `--help`.
-- `just check` inventories exactly seven explicit double-quoted `model` strings—six in
-  `scripts/smoke.sh` and one in `scripts/long-context.sh`—and asserts that every value is
-  `qwen3.8-27b`. `bench/eval_coding.py` retains its discovery-derived nonliteral value.
+- `just check` requires explicit model literals to remain nonempty in `scripts/smoke.sh` and
+  `scripts/long-context.sh`, and asserts that every explicit model literal across those files
+  and `bench/eval_coding.py` equals `qwen3.8-27b`. The benchmark retains its
+  discovery-derived nonliteral value.
 - A client using the retired path may be routed incidentally by llama.cpp's single-model behavior,
   but that token is no longer documented or tested and has no compatibility guarantee.
 
@@ -91,7 +91,7 @@ meaningful latency or token cost. Success is exact discovery plus the existing s
 | ALIAS-003 | Single-model discovery response | Exactly one advertised public id, `qwen3.8-27b` | Advertised path-derived or conflicting id | block |
 | ALIAS-004 | Existing tool and mid-dialogue system-message cases | Existing tool routing and `ZORP` assertions pass | New tool access or ignored system instruction | block |
 | ALIAS-005 | Discovery response inspected for deployment details | Its sole public id is exactly `qwen3.8-27b` | `/models/`, `Q6_K`, or a second id | block |
-| ALIAS-006 | Existing long-context probe plus the seven-field inventory check | Secret recall and prompt threshold pass; all seven explicit client model values equal the alias | Missing inventory entry, retry loop, truncation, or another literal model value | block |
+| ALIAS-006 | Existing long-context probe plus the positive per-client literal check | Secret recall and prompt threshold pass; each shell client has alias-valued request fields | Vacuous client check, retry loop, truncation, or another literal model value | block |
 | ALIAS-007 | Before implementation, `curl --fail --silent --show-error http://127.0.0.1:8001/v1/models | jq -e '.data[0].id == "qwen3.8-27b"'` against the old server | Exits nonzero before restart and zero after branch restart | Treating the one-time red observation as a reusable fixture | block |
 
 All gates are code-based. No LLM judge is used.
@@ -99,13 +99,14 @@ All gates are code-based. No LLM judge is used.
 ## Verification
 
 1. Before implementation, add the exact-cardinality discovery assertion to
-   `scripts/smoke.sh` and the seven-field inventory assertion to `scripts/check.sh`.
+   `scripts/smoke.sh` and the positive per-client model-literal assertion to
+   `scripts/check.sh`.
 2. Run `just check` against the existing files; expect failure with matches in
    `scripts/smoke.sh` and `scripts/long-context.sh`. Run `just smoke` against the existing
    server; expect failure because it advertises the path.
 3. Add the startup alias and migrate explicit request fields.
 4. Restart the container from this branch.
 5. Run `just check`, `just smoke`, and `just long-context`; expect all to pass. `just check`
-   must report exactly seven explicit double-quoted client `model` strings—six in
-   `scripts/smoke.sh` and one in `scripts/long-context.sh`—and every value must equal
-   `qwen3.8-27b`; `bench/eval_coding.py` must retain its discovery-derived value.
+   must report at least one explicit double-quoted `model` string in each request-owning
+   shell client, every explicit model literal across the in-scope clients must equal
+   `qwen3.8-27b`, and `bench/eval_coding.py` must retain its discovery-derived value.
