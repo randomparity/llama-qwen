@@ -3,6 +3,7 @@ set dotenv-load
 image := "ghcr.io/ggml-org/llama.cpp:server-cuda-b10423@sha256:a475c08c7c472425e3ebf7f6be9c6cb3a17e82ec28070ddeb22fffe3ca754a94"
 model_repo := "unsloth/Qwen3.8-27B-GGUF"
 model_file := "Qwen3.8-27B-Q6_K.gguf"
+model_alias := "qwen3.8-27b"
 model_sha256 := "562fbf760503008f118e5df38de5b3e97992d1f693f475815631198547486727"
 container_name := "llama-qwen"
 port := env("PORT", "8001")
@@ -36,6 +37,7 @@ start:
         --volume "{{ justfile_directory() }}/templates:/templates:ro,Z" \
         {{ image }} \
         --model /models/{{ model_file }} \
+        --alias {{ model_alias }} \
         --ctx-size {{ context_size }} \
         --parallel 1 \
         --n-gpu-layers 999 \
