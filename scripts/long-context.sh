@@ -6,7 +6,7 @@ readonly base_url="http://127.0.0.1:${port}"
 readonly filler_tokens=250000
 
 response="$({
-	printf '%s' '{"model":"Qwen3.8-27B-Q6_K.gguf","messages":[{"role":"user","content":"The secret word is ORCHID. Remember it. '
+	printf '%s' '{"model":"qwen3.8-27b","messages":[{"role":"user","content":"The secret word is ORCHID. Remember it. '
 	awk -v count="$filler_tokens" 'BEGIN { for (i = 0; i < count; i++) printf "filler " }'
 	printf '%s' 'What is the secret word? Reply with only that word."}],"reasoning_effort":"none","temperature":0,"max_tokens":16}'
 } | curl --fail --silent --show-error \

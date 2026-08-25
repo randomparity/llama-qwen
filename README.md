@@ -12,6 +12,12 @@ Containerized `llama.cpp` server for the Unsloth Q6_K quantization of
 - KV cache: Q8_0 keys and values
 - API: OpenAI-compatible endpoint on `http://127.0.0.1:8001/v1`
 
+## API clients
+
+Use `qwen3.8-27b` as the model name for OpenAI-compatible requests to
+`http://127.0.0.1:8001/v1`. The GGUF filename and `/models/` path are private server
+loading details, not API identifiers.
+
 The existing vLLM service uses the same A6000 and must be stopped while this
 server is running. Keep it available as the rollback path until the smoke tests
 and comparison benchmarks pass.

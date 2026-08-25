@@ -5,12 +5,25 @@ readonly port="${1:-8001}"
 readonly base_url="http://127.0.0.1:${port}"
 
 curl --fail --silent --show-error "$base_url/health" >/dev/null
+models_response="$(
+	curl --fail --silent --show-error --max-time 10 "$base_url/v1/models"
+)"
+
+jq -e '
+  any(.data[]?; .id == "qwen3.8-27b") and
+  all(.data[]?; .id != "/models/Qwen3.8-27B-Q6_K.gguf")
+' <<<"$models_response" >/dev/null || {
+	printf 'Unexpected model discovery response: %s\n' "$models_response" >&2
+	exit 1
+}
+
+printf 'Model alias verified.\n'
 
 response="$({
 	curl --fail --silent --show-error \
 		--header 'Content-Type: application/json' \
 		--data '{
-      "model": "Qwen3.8-27B-Q6_K.gguf",
+      "model": "qwen3.8-27b",
       "messages": [{"role": "user", "content": "Reply with exactly: ready"}],
       "reasoning_effort": "none",
       "temperature": 0,
@@ -31,7 +44,7 @@ reasoning_response="$({
 	curl --fail --silent --show-error \
 		--header 'Content-Type: application/json' \
 		--data '{
-      "model": "Qwen3.8-27B-Q6_K.gguf",
+      "model": "qwen3.8-27b",
       "messages": [{"role": "user", "content": "What is 17 times 23?"}],
       "chat_template_kwargs": {"reasoning_effort": "low"},
       "temperature": 0,
@@ -49,7 +62,7 @@ tool_response="$({
 	curl --fail --silent --show-error \
 		--header 'Content-Type: application/json' \
 		--data '{
-      "model": "Qwen3.8-27B-Q6_K.gguf",
+      "model": "qwen3.8-27b",
       "messages": [{"role": "user", "content": "Use get_weather for Portland, Oregon."}],
       "tools": [{
         "type": "function",
@@ -140,7 +153,7 @@ roundtrip_response="$({
 	curl --fail --silent --show-error \
 		--header 'Content-Type: application/json' \
 		--data '{
-      "model": "Qwen3.8-27B-Q6_K.gguf",
+      "model": "qwen3.8-27b",
       "messages": [
         {"role": "user", "content": "Weather in Portland?"},
         {"role": "assistant", "content": null, "tool_calls": [{
@@ -191,7 +204,7 @@ buried_request="$(jq -nc '
     }
   };
   {
-    model: "Qwen3.8-27B-Q6_K.gguf",
+    model: "qwen3.8-27b",
     messages: [{role: "user", content: "Use the weather tool for Portland, Oregon."}],
     tools: (
       [tool("list_files"), tool("read_file"), tool("search_web")] +
@@ -242,7 +255,7 @@ midsystem_response="$({
 	curl --fail --silent --show-error \
 		--header 'Content-Type: application/json' \
 		--data '{
-      "model": "Qwen3.8-27B-Q6_K.gguf",
+      "model": "qwen3.8-27b",
       "messages": [
         {"role": "user", "content": "Hello"},
         {"role": "assistant", "content": "Hi there."},
