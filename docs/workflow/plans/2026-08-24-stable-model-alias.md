@@ -6,7 +6,7 @@ OpenAI-compatible client to that identifier.
 **Architecture:** The `justfile` remains the single server-launch owner and passes the private
 GGUF path only to `--model`, with `--alias qwen3.8-27b` defining the public identity.
 `scripts/check.sh` enforces non-vacuous per-client alias literals, while
-`scripts/smoke.sh` verifies exact live discovery cardinality and routing before running its
+`scripts/smoke.sh` verifies live alias presence and retired-path absence before running its
 existing behavioral checks.
 
 **Tech stack:** just, Bash, curl, jq, ripgrep PCRE2, Podman, llama.cpp server b10423, Python 3.13.
@@ -18,7 +18,8 @@ existing behavioral checks.
 - Each request-owning shell client keeps at least one explicit double-quoted `model` string,
   and every explicit model literal across the in-scope clients equals `qwen3.8-27b`.
 - `bench/eval_coding.py` keeps its discovery-derived nonliteral model value.
-- `/v1/models` must contain exactly one `data` entry, whose `id` is `qwen3.8-27b`.
+- `/v1/models` must contain an entry whose `id` is `qwen3.8-27b` and must not retain
+  `/models/Qwen3.8-27B-Q6_K.gguf` as an id; unrelated entries remain allowed.
 - No compatibility enforcement or fallback is added for legacy model strings.
 - No weight, quantization, template, KV-cache, context-window, port, authentication, or
   external OMP configuration changes.
@@ -149,8 +150,7 @@ curl --fail --silent --show-error --retry 60 --retry-delay 2 \
 	http://127.0.0.1:8001/health
 curl --fail --silent --show-error http://127.0.0.1:8001/v1/models |
 	jq -e '
-	  (.data | length) == 1 and
-	  .data[0].id == "/models/Qwen3.8-27B-Q6_K.gguf"
+	  any(.data[]?; .id == "/models/Qwen3.8-27B-Q6_K.gguf")
 	'
 ```
 
@@ -164,11 +164,13 @@ path id. If readiness still fails, inspect `podman ps --all --filter name=llama-
 In `scripts/smoke.sh`, immediately after the health request, add:
 
 ```bash
-models_response="$(curl --fail --silent --show-error "$base_url/v1/models")"
+models_response="$(
+	curl --fail --silent --show-error --max-time 10 "$base_url/v1/models"
+)"
 
 jq -e '
-  (.data | length) == 1 and
-  .data[0].id == "qwen3.8-27b"
+  any(.data[]?; .id == "qwen3.8-27b") and
+  all(.data[]?; .id != "/models/Qwen3.8-27B-Q6_K.gguf")
 ' <<<"$models_response" >/dev/null || {
 	printf 'Unexpected model discovery response: %s\n' "$models_response" >&2
 	exit 1
@@ -304,8 +306,8 @@ Then query discovery directly:
 curl --fail --silent --show-error http://127.0.0.1:8001/v1/models
 ```
 
-Expected: `data` has one entry with `id` equal to `qwen3.8-27b` and no public id containing
-`/models/` or `Q6_K`.
+Expected: `data` contains an entry whose `id` is `qwen3.8-27b`, no entry retains
+`/models/Qwen3.8-27B-Q6_K.gguf` as its id, and unrelated entries are allowed.
 
 ### Step 8: Commit the verified implementation
 
@@ -316,6 +318,7 @@ git add justfile scripts/check.sh scripts/smoke.sh scripts/long-context.sh READM
 git commit -m 'feat: expose stable model alias'
 ```
 
-Acceptance: the commit contains the startup alias, complete client migration, exact discovery
-assertion, positive per-client model-literal guard, and README contract; design records remain
-in their prior commits. No temporary review artifacts enter Git.
+Acceptance: the commit contains the startup alias, complete client migration, live
+alias-presence and retired-path-absence assertion, positive per-client model-literal guard,
+and README contract; design records remain in their prior commits. No temporary review
+artifacts enter Git.

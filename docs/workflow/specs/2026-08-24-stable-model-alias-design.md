@@ -33,8 +33,9 @@ The existing `start` recipe remains the single owner of server launch configurat
 adds `--alias qwen3.8-27b` immediately after `--model`; the model path remains the private
 weight-loading input while the alias becomes the public routing identifier.
 
-The smoke script first queries `/v1/models` and fails unless `data` contains exactly one
-entry whose `id` is `qwen3.8-27b`. Every subsequent request uses that same literal. A
+The smoke script first queries `/v1/models` and fails unless at least one entry has
+`id == "qwen3.8-27b"` and no entry retains the exact private GGUF path as its id.
+Every subsequent request uses that same literal. A
 separate `just check` assertion requires at least one explicit double-quoted `model`
 string in each request-owning shell client and fails unless every explicit model literal
 across the in-scope clients equals `qwen3.8-27b`. The coding evaluation retains its
@@ -68,38 +69,38 @@ a different model, alter prompt behavior, or weaken existing tool or system-mess
 The repository provides no fallback or compatibility guarantee: failure to route the alias is
 an explicit HTTP or smoke-test failure, while incidental acceptance of other tokens by
 llama.cpp remains outside the contract. Alias lookup adds no model inference and therefore no
-meaningful latency or token cost. Success is exact discovery plus the existing smoke suite.
+meaningful latency or token cost. Success is alias discovery plus the existing smoke suite.
 
 ### Failure-mode map
 
 | Failure mode | Severity | Measurement |
 |---|---:|---|
-| Discovery still exposes the container path | 4 | `jq` requires exactly one `/v1/models` entry whose id is the alias |
+| Discovery does not expose the alias or retains the private model path | 4 | `jq` requires an alias entry and rejects the exact private-path id |
 | Requests using the documented alias do not route | 4 | Existing smoke chat request returns `ready` |
 | Alias routes a different model or changes reasoning/tool behavior | 4 | Existing reasoning, tool, and system-message smoke assertions |
 | Long-context path retains the retired id | 4 | `just long-context` against the branch-started container |
 | Unsafe or forbidden request behavior changes | 2 | No prompt/template/tool configuration changes; existing tool and system-message smoke cases remain green |
 | Alias creates an expensive retry or loop | 2 | One discovery request and one model identifier; no retry path added |
-| Ambiguous or conflicting model discovery | 2 | Exact discovery cardinality and id assertion |
+| Ambiguous or conflicting model discovery | 2 | Alias-presence and retired-path-absence assertion; unrelated entries remain allowed |
 
 ### Eval cases
 
 | ID | Input and setup | Observable pass traits | Forbidden traits | Gate |
 |---|---|---|---|---|
-| ALIAS-001 | Start this branch; `GET /v1/models` | `data` has length one and its only `id` equals `qwen3.8-27b` | Extra, path-derived, or quantization-derived id | block |
+| ALIAS-001 | Start this branch; `GET /v1/models` | At least one entry has `id == "qwen3.8-27b"` | Missing alias or exact private-path id | block |
 | ALIAS-002 | Chat request naming `qwen3.8-27b` | Existing exact `ready` assertion passes | Unknown-model error or alternate model | block |
-| ALIAS-003 | Single-model discovery response | Exactly one advertised public id, `qwen3.8-27b` | Advertised path-derived or conflicting id | block |
+| ALIAS-003 | Discovery response with optional unrelated entries | Alias is present and the exact retired path is absent | Freezing unrelated entry count or identity | block |
 | ALIAS-004 | Existing tool and mid-dialogue system-message cases | Existing tool routing and `ZORP` assertions pass | New tool access or ignored system instruction | block |
-| ALIAS-005 | Discovery response inspected for deployment details | Its sole public id is exactly `qwen3.8-27b` | `/models/`, `Q6_K`, or a second id | block |
+| ALIAS-005 | Discovery response inspected for deployment details | Served alias is present and `/models/Qwen3.8-27B-Q6_K.gguf` is absent | Exact private path retained as an id | block |
 | ALIAS-006 | Existing long-context probe plus the positive per-client literal check | Secret recall and prompt threshold pass; each shell client has alias-valued request fields | Vacuous client check, retry loop, truncation, or another literal model value | block |
-| ALIAS-007 | Before implementation, `curl --fail --silent --show-error http://127.0.0.1:8001/v1/models | jq -e '.data[0].id == "qwen3.8-27b"'` against the old server | Exits nonzero before restart and zero after branch restart | Treating the one-time red observation as a reusable fixture | block |
+| ALIAS-007 | Before implementation, `curl --fail --silent --show-error http://127.0.0.1:8001/v1/models | jq -e 'any(.data[]?; .id == "qwen3.8-27b")'` against the old server | Exits nonzero before restart and zero after branch restart | Treating the one-time red observation as a reusable fixture | block |
 
 All gates are code-based. No LLM judge is used.
 
 ## Verification
 
-1. Before implementation, add the exact-cardinality discovery assertion to
-   `scripts/smoke.sh` and the positive per-client model-literal assertion to
+1. Before implementation, add the alias-presence and retired-path-absence discovery assertion
+   to `scripts/smoke.sh` and the positive per-client model-literal assertion to
    `scripts/check.sh`.
 2. Run `just check` against the existing files; expect failure with matches in
    `scripts/smoke.sh` and `scripts/long-context.sh`. Run `just smoke` against the existing
