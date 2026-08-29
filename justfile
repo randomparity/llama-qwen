@@ -32,7 +32,7 @@ start:
         --name {{ container_name }} \
         --security-opt label=disable \
         --device nvidia.com/gpu=0 \
-        --publish 127.0.0.1:{{ port }}:8000 \
+        --publish 0.0.0.0:{{ port }}:8000 \
         --volume "{{ justfile_directory() }}/models:/models:ro,Z" \
         --volume "{{ justfile_directory() }}/templates:/templates:ro,Z" \
         {{ image }} \
