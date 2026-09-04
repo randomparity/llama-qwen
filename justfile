@@ -3,11 +3,12 @@ set dotenv-load
 image := "ghcr.io/ggml-org/llama.cpp:server-cuda-b10423@sha256:a475c08c7c472425e3ebf7f6be9c6cb3a17e82ec28070ddeb22fffe3ca754a94"
 model_repo := "unsloth/Qwen3.8-27B-GGUF"
 model_file := "Qwen3.8-27B-Q6_K.gguf"
-model_alias := "qwen3.8-27b"
 model_sha256 := "562fbf760503008f118e5df38de5b3e97992d1f693f475815631198547486727"
 container_name := "llama-qwen"
+service_name := "llama-qwen.service"
+# The served model configuration — image, alias, context size, KV cache — lives
+# in deploy/llama-qwen.container. scripts/check.sh guards the overlap.
 port := env("PORT", "8001")
-context_size := "262144"
 
 default: help
 
@@ -27,39 +28,39 @@ download:
         https://huggingface.co/{{ model_repo }}/resolve/main/{{ model_file }}
     printf '%s  %s\n' '{{ model_sha256 }}' 'models/{{ model_file }}' | sha256sum --check --strict
 
+# Install the Quadlet unit so systemd owns the server, including across reboots.
+install-service:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/containers/systemd"
+    mkdir -p "$unit_dir"
+    sed 's|@REPO_DIR@|{{ justfile_directory() }}|g' \
+        '{{ justfile_directory() }}/deploy/llama-qwen.container' \
+        > "$unit_dir/llama-qwen.container"
+    # Without lingering, the user manager exits at logout and the unit only runs
+    # while someone is signed in.
+    if [[ "$(loginctl show-user "$USER" --property=Linger --value)" != 'yes' ]]; then
+        loginctl enable-linger "$USER"
+    fi
+    # Quadlet is a systemd generator: daemon-reload regenerates llama-qwen.service
+    # and its default.target.wants symlink. Never `systemctl enable` a generated unit.
+    systemctl --user daemon-reload
+    printf 'Installed %s/llama-qwen.container\n' "$unit_dir"
+    systemctl --user is-enabled {{ service_name }}
+
 start:
-    podman run --detach \
-        --name {{ container_name }} \
-        --security-opt label=disable \
-        --device nvidia.com/gpu=0 \
-        --publish 0.0.0.0:{{ port }}:8000 \
-        --volume "{{ justfile_directory() }}/models:/models:ro,Z" \
-        --volume "{{ justfile_directory() }}/templates:/templates:ro,Z" \
-        {{ image }} \
-        --model /models/{{ model_file }} \
-        --alias {{ model_alias }} \
-        --ctx-size {{ context_size }} \
-        --parallel 1 \
-        --n-gpu-layers 999 \
-        --flash-attn on \
-        --cache-type-k q8_0 \
-        --cache-type-v q8_0 \
-        --spec-type draft-mtp \
-        --jinja \
-        --chat-template-file /templates/qwen3.8-27b.jinja \
-        --chat-template-kwargs '{"reasoning_effort":"xhigh"}' \
-        --reasoning-format deepseek \
-        --host 0.0.0.0 \
-        --port 8000
+    systemctl --user start {{ service_name }}
 
 stop:
-    podman stop {{ container_name }}
-    podman rm {{ container_name }}
+    systemctl --user stop {{ service_name }}
 
+# The journal, not `podman logs`: systemd removes the container when the unit
+# stops or the server crashes, taking its container logs with it.
 logs:
-    podman logs --follow {{ container_name }}
+    journalctl --user --unit {{ service_name }} --lines 100 --follow
 
 status:
+    systemctl --user list-units --all --no-pager {{ service_name }}
     podman ps --all --filter name={{ container_name }}
 
 health:
