@@ -5,6 +5,8 @@ readonly model_file='Qwen3.8-27B-Q6_K.gguf'
 readonly image='ghcr.io/ggml-org/llama.cpp:server-cuda-b10423@sha256:a475c08c7c472425e3ebf7f6be9c6cb3a17e82ec28070ddeb22fffe3ca754a94'
 readonly model_alias='qwen3.8-27b'
 readonly model_literal_pattern='(?:(?:"model")|model)[[:space:]]*:[[:space:]]*"\K[^"]+'
+readonly quadlet_unit='deploy/llama-qwen.container'
+readonly quadlet_generator='/usr/lib/systemd/user-generators/podman-user-generator'
 
 check_model_literals() { # file require-nonempty
 	local file=$1 require_nonempty=$2
@@ -33,6 +35,43 @@ check_model_literals() { # file require-nonempty
 check_model_literals 'scripts/smoke.sh' 1
 check_model_literals 'scripts/long-context.sh' 1
 check_model_literals 'bench/eval_coding.py' 0
+
+# deploy/llama-qwen.container is the only definition of the served model, so it
+# must agree with the image and model this script pins for every other recipe.
+check_quadlet_pins() { # description pattern
+	local description=$1 pattern=$2
+
+	rg --quiet --fixed-strings -- "$pattern" "$quadlet_unit" || {
+		printf 'Quadlet %s does not pin the %s; expected %s\n' \
+			"$quadlet_unit" "$description" "$pattern" >&2
+		exit 1
+	}
+}
+
+check_quadlet_pins 'image' "Image=$image"
+check_quadlet_pins 'model file' "--model /models/$model_file"
+check_quadlet_pins 'model alias' "--alias $model_alias"
+
+# Parse the unit the way systemd will at boot, so a bad key fails here and not
+# after the next reboot. The generator only reads whole directories, and it
+# resolves @REPO_DIR@ to a real path, so stage a substituted copy.
+[[ -x "$quadlet_generator" ]] || {
+	printf 'Quadlet generator %s is missing; install podman-quadlet\n' \
+		"$quadlet_generator" >&2
+	exit 1
+}
+
+staged_unit_dir="$(mktemp --directory)"
+trap 'rm -rf "$staged_unit_dir"' EXIT
+sed "s|@REPO_DIR@|$PWD|g" "$quadlet_unit" \
+	>"$staged_unit_dir/llama-qwen.container"
+
+QUADLET_UNIT_DIRS="$staged_unit_dir" "$quadlet_generator" --dryrun --user \
+	>/dev/null || {
+	printf 'Quadlet %s does not generate a valid systemd unit\n' \
+		"$quadlet_unit" >&2
+	exit 1
+}
 
 [[ "$(uname -m)" == 'x86_64' ]] || {
 	printf 'Unsupported host architecture: %s (expected x86_64)\n' "$(uname -m)" >&2
